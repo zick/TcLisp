@@ -90,6 +90,23 @@ proc nreverse {lst} {
     return $ret
 }
 
+proc pairlis {lst1 lst2} {
+    set ret 0
+    lispush $lst1
+    lispush $lst2
+    while {[getTag $lst1] == 1 && [getTag $lst2] == 1} {
+        lispush $ret
+        set tmp [makeCons [car $lst1] [car $lst2]]
+        lispush $tmp
+        set ret [makeCons $tmp $ret]
+        lispop 2
+        set lst1 [cdr $lst1]
+        set lst2 [cdr $lst2]
+    }
+    lispop 2
+    return [nreverse $ret]
+}
+
 proc isSpace {str i} {
     set c [string index $str $i]
     return [expr {[string equal $c "\t"]
@@ -153,6 +170,11 @@ proc getNum {num} {
 
 proc makeSubr {n} {
     return [setData [setTag 0 4] $n]
+}
+
+proc makeExpr {args env} {
+    set ret [makeCons $env $args]
+    return [setTag $ret 5]
 }
 
 proc makeNumOrSym {str} {
@@ -241,6 +263,10 @@ proc printObj {obj} {
         return [getNum $obj]
     } elseif {$tag == 3} then {
         return $sym_table([getData $obj])
+    } elseif {$tag == 4} then {
+        return "<subr>"
+    } elseif {$tag == 5} then {
+        return "<expr>"
     } elseif {$tag == 6} then {
         append ret "<error: " $sym_table([getData $obj]) ">"
         return $ret
@@ -322,6 +348,8 @@ proc eval1 {obj env} {
             return [eval1 [car [cdr [cdr $args]]] $env]
         }
         return [eval1 [car [cdr $args]] $env]
+    } elseif {$op == [makeSym "lambda"]} then {
+        return [makeExpr $args $env]
     }
     lispush $env
     lispush $args
@@ -349,6 +377,18 @@ proc evlis {lst env} {
     return [nreverse $ret]
 }
 
+proc progn {bdy env} {
+    set ret 0
+    lispush $bdy
+    lispush $env
+    while {[getTag $bdy] == 1} {
+        set ret [eval1 [car $bdy] $env]
+        set bdy [cdr $bdy]
+    }
+    lispop 2
+    return $ret
+}
+
 proc apply1 {fn args env} {
     if {[getTag $fn] == 6} then {
         return $fn
@@ -356,8 +396,16 @@ proc apply1 {fn args env} {
         return $args
     } elseif {[getTag $fn] == 4} then {
         return [subrCall [getData $fn] $args]
+    } elseif {[getTag $fn] == 5} then {
+        lispush $fn
+        lispush $env
+        set tmp [pairlis [car [cdr $fn]] $args]
+        set tmp [makeCons $tmp [car $fn]]
+        lispop 2
+        return [progn [cdr [cdr $fn]] $tmp]
     }
-    return [makeError "noimpl"]
+    append msg [printObj $fn] " is not function"
+    return [makeError $msg]
 }
 
 proc subrCall {n args} {
