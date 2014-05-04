@@ -59,6 +59,7 @@ proc makeCons {a d} {
     global car_list
     global cdr_list
     global cell_index
+    # Don't forget to push car/cdr when gcing.
     set car_list($cell_index) $a
     set cdr_list($cell_index) $d
     incr cell_index
@@ -148,6 +149,10 @@ proc getNum {num} {
         set raw [expr $raw | ~0x0fffffff]
     }
     return $raw
+}
+
+proc makeSubr {n} {
+    return [setData [setTag 0 4] $n]
 }
 
 proc makeNumOrSym {str} {
@@ -303,9 +308,72 @@ proc eval1 {obj env} {
             return [cdr $bind]
         }
     }
+
+    set op [car $obj]
+    set args [cdr $obj]
+    if {$op == [makeSym "quote"]} then {
+        return [car $args]
+    } elseif {$op == [makeSym "if"]} then {
+        lispush $args
+        lispush $env
+        set cond [eval1 [car $args] $env]
+        lispop 2
+        if {$cond == 0} then {
+            return [eval1 [car [cdr [cdr $args]]] $env]
+        }
+        return [eval1 [car [cdr $args]] $env]
+    }
+    lispush $env
+    lispush $args
+    set op [eval1 $op $env]
+    lispop 1
+    lispush $op
+    set args [evlis $args $env]
+    lispop 2
+    return [apply1 $op $args $env]
+}
+
+proc evlis {lst env} {
+    set ret 0
+    lispush $lst
+    lispush $env
+    while {[getTag $lst] == 1} {
+        lispush $ret
+        set elm [eval1 [car $lst] $env]
+        lispush $elm
+        set ret [makeCons $elm $ret]
+        lispop 2
+        set lst [cdr $lst]
+    }
+    lispop 2
+    return [nreverse $ret]
+}
+
+proc apply1 {fn args env} {
+    if {[getTag $fn] == 6} then {
+        return $fn
+    } elseif {[getTag $args] == 6} then {
+        return $args
+    } elseif {[getTag $fn] == 4} then {
+        return [subrCall [getData $fn] $args]
+    }
     return [makeError "noimpl"]
 }
 
+proc subrCall {n args} {
+    if {$n == 0} then {
+        return [car [car $args]]
+    } elseif {$n == 1} then {
+        return [cdr [car $args]]
+    } elseif {$n == 2} then {
+        return [makeCons [car $args] [car [cdr $args]]]
+    }
+    return [makeError "unknown subr"]
+}
+
+addToEnv [makeSym "car"] [makeSubr 0] $g_env
+addToEnv [makeSym "cdr"] [makeSubr 1] $g_env
+addToEnv [makeSym "cons"] [makeSubr 2] $g_env
 addToEnv [makeSym "t"] [makeSym "t"] $g_env
 
 puts -nonewline "> "
