@@ -357,6 +357,19 @@ proc eval1 {obj env} {
         addToEnv [car $args] $tmp $g_env
         lispop 1
         return [car $args]
+    } elseif {$op == [makeSym "setq"]} then {
+        lispush $args
+        lispush $env
+        set val [eval1 [car [cdr $args]] $env]
+        set sym [car $args]
+        set bind [findVar $sym $env]
+        if {$bind == 0} then {
+            addToEnv $sym $val $g_env
+        } else {
+            setCdr $bind $val
+        }
+        lispop 2
+        return $val
     }
     lispush $env
     lispush $args
