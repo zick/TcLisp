@@ -73,11 +73,9 @@ proc lispush {obj} {
     set lstack($sp) $obj
     incr sp
 }
-proc lispop {} {
+proc lispop {n} {
     global sp
-    global lstack
-    incr sp -1
-    return $lstack($sp)
+    incr sp [expr {0 - $n}]
 }
 
 proc nreverse {lst} {
@@ -195,8 +193,7 @@ proc read {str} {
         set ret [makeCons $elm 0]
         lispush $ret
         set ret [makeCons [makeSym "quote"] $ret]
-        lispop
-        lispop
+        lispop 2
         return [list $ret [lindex $tmp 1]]
     }
     return [readAtom $str]
@@ -222,7 +219,7 @@ proc readList {str} {
         }
         lispush $ret
         set ret [makeCons $elm $ret]
-        lispop
+        lispop 1
         set str $next
     }
     return [list [nreverse $ret] [string range $str 1 [string length $str]]]
@@ -261,17 +258,62 @@ proc printList {obj} {
     if {$obj == 0} then {
         append ret2 "(" $ret ")"
     } else {
-        append ret2 "(" $ret " . " [printObj [cdr $obj]] ")"
+        append ret2 "(" $ret " . " [printObj $obj] ")"
     }
     return $ret2
 }
+
+proc findVar {sym env} {
+    while {[getTag $env] == 1} {
+        set alist [car $env]
+        while {[getTag $alist] == 1} {
+            if {[car [car $alist]] == $sym} then {
+                return [car $alist]
+            }
+            set alist [cdr $alist]
+        }
+        set env [cdr $env]
+    }
+    return 0
+}
+
+set g_env [makeCons 0 0]
+
+proc addToEnv {sym val env} {
+    lispush $sym
+    lispush $val
+    lispush $env
+    set tmp [makeCons $sym $val]
+    lispush $tmp
+    set tmp [makeCons $tmp [car $env]]
+    setCar $env $tmp
+    lispop 4
+}
+
+proc eval1 {obj env} {
+    set tag [getTag $obj]
+    if {$tag == 0 || $tag == 2 || $tag == 6} then {
+        return $obj
+    } elseif {$tag == 3} then {
+        set bind [findVar $obj $env]
+        if {$bind == 0} then {
+            append msg [printObj $obj] " has no value"
+            return [makeError $msg]
+        } else {
+            return [cdr $bind]
+        }
+    }
+    return [makeError "noimpl"]
+}
+
+addToEnv [makeSym "t"] [makeSym "t"] $g_env
 
 puts -nonewline "> "
 flush stdout
 while {[gets stdin line] >= 0} {
     global sp
     set obj [lindex [read $line] 0]
-    puts [printObj $obj]
+    puts [printObj [eval1 $obj $g_env]]
     puts $sp
     puts -nonewline "> "
     flush stdout
