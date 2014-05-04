@@ -35,6 +35,62 @@ proc setGc {x gc} {
     return [expr {($x & ~0x80000000) | ($gc << 31)}]
 }
 
+set car_list(0) 0
+set cdr_list(0) 0
+set cell_index 1
+proc car {cell} {
+    global car_list
+    return $car_list([getData $cell])
+}
+proc cdr {cell} {
+    global cdr_list
+    return $cdr_list([getData $cell])
+}
+proc setCar {cell val} {
+    global car_list
+    set car_list([getData $cell]) $val
+}
+proc setCdr {cell val} {
+    global cdr_list
+    set cdr_list([getData $cell]) $val
+}
+
+proc makeCons {a d} {
+    global car_list
+    global cdr_list
+    global cell_index
+    set car_list($cell_index) $a
+    set cdr_list($cell_index) $d
+    incr cell_index
+    return [setData [setTag 0 1] [expr {$cell_index - 1}]]
+}
+
+set sp 0
+set lstack(0) 0
+proc lispush {obj} {
+    global sp
+    global lstack
+    set lstack($sp) $obj
+    incr sp
+}
+proc lispop {} {
+    global sp
+    global lstack
+    incr sp -1
+    return $lstack($sp)
+}
+
+proc nreverse {lst} {
+    set ret 0
+    while {[getTag $lst] == 1} {
+        set tmp [cdr $lst]
+        setCdr $lst $ret
+        set ret $lst
+        set lst $tmp
+    }
+    return $ret
+}
+
 proc isSpace {str i} {
     set c [string index $str $i]
     return [expr {[string equal $c "\t"]
@@ -109,7 +165,7 @@ proc readAtom {str} {
     while {$i < [string length $str]} {
         if {[isDelimiter $str $i]} {
             set next [string range $str $i [string length $str]]
-            set str [string range $str 0 $i]
+            set str [string range $str 0 [expr {$i - 1}]]
             break
         }
         incr i
@@ -128,14 +184,48 @@ proc read {str} {
     }
     set c [string index $str 0]
     if {[string equal $c "("]} then {
-        return [list [makeError "noimpl"] ""]
+        return [readList [string range $str 1 [string length $str]]]
     } elseif {[string equal $c ")"]} then {
         append msg "invalid syntax: " $str
         return [list [makeError $msg] ""]
     } elseif {[string equal $c "'"]} then {
-        return [list [makeError "noimpl"] ""]
+        set tmp [read [string range $str 1 [string length $str]]]
+        set elm [lindex $tmp 0]
+        lispush $elm
+        set ret [makeCons $elm 0]
+        lispush $ret
+        set ret [makeCons [makeSym "quote"] $ret]
+        lispop
+        lispop
+        return [list $ret [lindex $tmp 1]]
     }
     return [readAtom $str]
+}
+
+proc readList {str} {
+    set ret 0
+    while {1} {
+        set str [skipSpaces $str]
+        if {[string length $str] == 0} then {
+            return [list [makeError "unfinished parenthesis"] ""]
+        }
+        set c [string index $str 0]
+        if {[string equal $c "("]} then {  # for editor
+        } elseif {[string equal $c ")"]} then {
+            break
+        }
+        set tmp [read $str]
+        set elm [lindex $tmp 0]
+        set next [lindex $tmp 1]
+        if {[getTag $elm] == 6} then {
+            return [list $elm ""]
+        }
+        lispush $ret
+        set ret [makeCons $elm $ret]
+        lispop
+        set str $next
+    }
+    return [list [nreverse $ret] [string range $str 1 [string length $str]]]
 }
 
 proc printObj {obj} {
@@ -144,7 +234,7 @@ proc printObj {obj} {
     if {$tag == 0} then {
         return "nil"
     } elseif {$tag == 1} then {
-        return "CONS"
+        return [printList $obj]
     } elseif {$tag == 2} then {
         return [getNum $obj]
     } elseif {$tag == 3} then {
@@ -156,11 +246,33 @@ proc printObj {obj} {
     return "<unknown>"
 }
 
+proc printList {obj} {
+    set ret ""
+    set first 1
+    while {[getTag $obj] == 1} {
+        if {$first} then {
+            set first 0
+        } else {
+            append ret " "
+        }
+        append ret [printObj [car $obj]]
+        set obj [cdr $obj]
+    }
+    if {$obj == 0} then {
+        append ret2 "(" $ret ")"
+    } else {
+        append ret2 "(" $ret " . " [printObj [cdr $obj]] ")"
+    }
+    return $ret2
+}
+
 puts -nonewline "> "
 flush stdout
 while {[gets stdin line] >= 0} {
+    global sp
     set obj [lindex [read $line] 0]
     puts [printObj $obj]
+    puts $sp
     puts -nonewline "> "
     flush stdout
 }
