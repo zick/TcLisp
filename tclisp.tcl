@@ -435,6 +435,48 @@ proc subrCall {n args} {
         return [cdr [car $args]]
     } elseif {$n == 2} then {
         return [makeCons [car $args] [car [cdr $args]]]
+    } elseif {$n == 3} then {
+        if {[car $args] == [car [cdr $args]]} {
+            return [makeSym "t"]
+        }
+        return 0
+    } elseif {$n == 4} then {
+        if {[getTag [car $args]] == 1} then {
+            return 0
+        }
+        return [makeSym "t"]
+    } elseif {$n == 5} then {
+        if {[getTag [car $args]] == 2} then {
+            return [makeSym "t"]
+        }
+        return 0
+    } elseif {$n == 6} then {
+        if {[getTag [car $args]] == 3} then {
+            return [makeSym "t"]
+        }
+        return 0
+    } else {
+        return [arithCall [expr $n - 7] $args]
+    }
+    return [makeError "unknown subr"]
+}
+
+proc arithCall {n args} {
+    if {[getTag [car $args]] != 2 || [getTag [car [cdr $args]]] != 2} then {
+        return [makeError "wrong type"]
+    }
+    set x [getNum [car $args]]
+    set y [getNum [car [cdr $args]]]
+    if {$n == 0} then {
+        return [makeNum [expr $x + $y]]
+    } elseif {$n == 1} then {
+        return [makeNum [expr $x * $y]]
+    } elseif {$n == 2} then {
+        return [makeNum [expr $x - $y]]
+    } elseif {$n == 3} then {
+        return [makeNum [expr $x / $y]]
+    } elseif {$n == 4} then {
+        return [makeNum [expr $x % $y]]
     }
     return [makeError "unknown subr"]
 }
@@ -442,7 +484,15 @@ proc subrCall {n args} {
 addToEnv [makeSym "car"] [makeSubr 0] $g_env
 addToEnv [makeSym "cdr"] [makeSubr 1] $g_env
 addToEnv [makeSym "cons"] [makeSubr 2] $g_env
-addToEnv [makeSym "t"] [makeSym "t"] $g_env
+addToEnv [makeSym "eq"] [makeSubr 3] $g_env
+addToEnv [makeSym "atom"] [makeSubr 4] $g_env
+addToEnv [makeSym "numberp"] [makeSubr 5] $g_env
+addToEnv [makeSym "symbolp"] [makeSubr 6] $g_env
+addToEnv [makeSym "+"] [makeSubr 7] $g_env
+addToEnv [makeSym "*"] [makeSubr 8] $g_env
+addToEnv [makeSym "-"] [makeSubr 9] $g_env
+addToEnv [makeSym "/"] [makeSubr 10] $g_env
+addToEnv [makeSym "mod"] [makeSubr 11] $g_env
 
 puts -nonewline "> "
 flush stdout
