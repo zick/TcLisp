@@ -322,6 +322,7 @@ proc addToEnv {sym val env} {
 }
 
 proc eval1 {obj env} {
+    global g_env
     set tag [getTag $obj]
     if {$tag == 0 || $tag == 2 || $tag == 6} then {
         return $obj
@@ -350,6 +351,12 @@ proc eval1 {obj env} {
         return [eval1 [car [cdr $args]] $env]
     } elseif {$op == [makeSym "lambda"]} then {
         return [makeExpr $args $env]
+    } elseif {$op == [makeSym "defun"]} then {
+        lispush $args
+        set tmp [makeExpr [cdr $args] $env]
+        addToEnv [car $args] $tmp $g_env
+        lispop 1
+        return [car $args]
     }
     lispush $env
     lispush $args
