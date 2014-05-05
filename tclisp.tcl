@@ -11,6 +11,12 @@
 #   expr: 5
 #   error: 6
 
+# Change recursionlimit if you need more stack.
+# interp recursionlimit {} 10000
+
+# Change cell_limit if you need more heap.
+set cell_limit 65536
+
 proc getTag {x} {
     return [expr {$x & 0x7}]
 }
@@ -37,7 +43,7 @@ proc setGc {x gc} {
 
 set car_list(0) 0
 set cdr_list(0) 0
-set cell_index 1
+set free_list 1
 proc car {cell} {
     global car_list
     return $car_list([getData $cell])
@@ -58,12 +64,23 @@ proc setCdr {cell val} {
 proc makeCons {a d} {
     global car_list
     global cdr_list
-    global cell_index
-    # Don't forget to push car/cdr when gcing.
-    set car_list($cell_index) $a
-    set cdr_list($cell_index) $d
-    incr cell_index
-    return [setData [setTag 0 1] [expr {$cell_index - 1}]]
+    global free_list
+    global cell_limit
+    if {$free_list == $cell_limit} then {
+        lispush $a
+        lispush $d
+        gc
+        lispop 2
+    }
+    if {$free_list == [array size car_list]} then {
+        set car_list($free_list) [expr $free_list + 1]
+        set cdr_list($free_list) -1
+    }
+    set cell $free_list
+    set free_list $car_list($free_list)
+    set car_list($cell) $a
+    set cdr_list($cell) $d
+    return [setData [setTag 0 1] $cell]
 }
 
 set sp 0
@@ -77,6 +94,68 @@ proc lispush {obj} {
 proc lispop {n} {
     global sp
     incr sp [expr {0 - $n}]
+}
+
+set g_env 0
+
+proc gc {} {
+    global free_list
+    global cell_limit
+    puts "GCing..."
+    mark
+    sweep
+    if {$free_list == $cell_limit} then {
+        append msg "MEMORY EXCEEDED (over " $cell_limit " cells)"
+        puts $msg
+        exit 1
+    }
+}
+
+proc mark {} {
+    global sp
+    global lstack
+    global g_env
+    markObj $g_env
+    set i 0
+    while {$i < $sp} {
+        markObj $lstack($i)
+        incr i
+    }
+}
+
+proc markObj {obj} {
+    if {[getTag $obj] != 1 && [getTag $obj] != 5} then {
+        return
+    } elseif {[getGc [car $obj]]} {
+        return
+    }
+    setCar $obj [setGc [car $obj] 1]
+    markObj [car $obj]
+    markObj [cdr $obj]
+}
+
+proc sweep {} {
+    global car_list
+    global cdr_list
+    global free_list
+    global cell_limit
+
+    set free_list [array size car_list]
+    set i 0
+    set used 0
+    while {$i < [array size car_list]} {
+        if {[getGc $car_list($i)]} then {
+            set car_list($i) [setGc $car_list($i) 0]
+            incr used
+        } else {
+            set car_list($i) $free_list
+            set free_list $i
+            set cdr_list($i) -1
+        }
+        incr i
+    }
+    append msg "Used: " $used "\nAvailable: " [expr $cell_limit - $used]
+    puts $msg
 }
 
 proc nreverse {lst} {
@@ -238,7 +317,9 @@ proc readList {str} {
         } elseif {[string equal $c ")"]} then {
             break
         }
+        lispush $ret
         set tmp [read $str]
+        lispop 1
         set elm [lindex $tmp 0]
         set next [lindex $tmp 1]
         if {[getTag $elm] == 6} then {
@@ -497,10 +578,8 @@ addToEnv [makeSym "mod"] [makeSubr 11] $g_env
 puts -nonewline "> "
 flush stdout
 while {[gets stdin line] >= 0} {
-    global sp
     set obj [lindex [read $line] 0]
     puts [printObj [eval1 $obj $g_env]]
-    puts $sp
     puts -nonewline "> "
     flush stdout
 }
