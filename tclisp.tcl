@@ -60,6 +60,18 @@ proc setCdr {cell val} {
     global cdr_list
     set cdr_list([getData $cell]) $val
 }
+proc safeCar {obj} {
+    if {[getTag $obj] == 1} then {
+        return [car $obj]
+    }
+    return 0
+}
+proc safeCdr {obj} {
+    if {[getTag $obj] == 1} then {
+        return [cdr $obj]
+    }
+    return 0
+}
 
 proc makeCons {a d} {
     global car_list
@@ -115,7 +127,9 @@ proc mark {} {
     global sp
     global lstack
     global g_env
+    global loop_val
     markObj $g_env
+    markObj $loop_val
     set i 0
     while {$i < $sp} {
         markObj $lstack($i)
@@ -436,38 +450,38 @@ proc eval1 {obj env} {
         }
     }
 
-    set op [car $obj]
-    set args [cdr $obj]
+    set op [safeCar $obj]
+    set args [safeCdr $obj]
     if {$op == $sym_quote} then {
-        return [car $args]
+        return [safeCar $args]
     } elseif {$op == $sym_if} then {
         lispush $args
         lispush $env
-        set cond [eval1 [car $args] $env]
+        set cond [eval1 [safeCar $args] $env]
         lispop 2
         if {[getTag $cond] == 6} then {
             return $cond
         } elseif {$cond == 0} then {
-            return [eval1 [car [cdr [cdr $args]]] $env]
+            return [eval1 [safeCar [safeCdr [safeCdr $args]]] $env]
         }
-        return [eval1 [car [cdr $args]] $env]
+        return [eval1 [safeCar [safeCdr $args]] $env]
     } elseif {$op == $sym_lambda} then {
         return [makeExpr $args $env]
     } elseif {$op == $sym_defun} then {
         lispush $args
-        set tmp [makeExpr [cdr $args] $env]
-        addToEnv [car $args] $tmp $g_env
+        set tmp [makeExpr [safeCdr $args] $env]
+        addToEnv [safeCar $args] $tmp $g_env
         lispop 1
-        return [car $args]
+        return [safeCar $args]
     } elseif {$op == $sym_setq} then {
         lispush $args
         lispush $env
-        set val [eval1 [car [cdr $args]] $env]
+        set val [eval1 [safeCar [safeCdr $args]] $env]
         lispop 2
         if {[getTag $val] == 6} then {
             return $val
         }
-        set sym [car $args]
+        set sym [safeCar $args]
         set bind [findVar $sym $env]
         if {$bind == 0} then {
             addToEnv $sym $val $g_env
@@ -478,7 +492,7 @@ proc eval1 {obj env} {
     } elseif {$op == $sym_loop} then {
         return [loop1 $args $env]
     } elseif {$op == $sym_return} then {
-        set loop_val [eval1 [car $args] $env]
+        set loop_val [eval1 [safeCar $args] $env]
         return [makeError ""]
     }
     lispush $env
@@ -559,28 +573,28 @@ proc apply1 {fn args env} {
 proc subrCall {n args} {
     global sym_t
     if {$n == 0} then {
-        return [car [car $args]]
+        return [safeCar [safeCar $args]]
     } elseif {$n == 1} then {
-        return [cdr [car $args]]
+        return [safeCdr [safeCar $args]]
     } elseif {$n == 2} then {
-        return [makeCons [car $args] [car [cdr $args]]]
+        return [makeCons [safeCar $args] [safeCar [safeCdr $args]]]
     } elseif {$n == 3} then {
-        if {[car $args] == [car [cdr $args]]} {
+        if {[safeCar $args] == [safeCar [safeCdr $args]]} {
             return $sym_t
         }
         return 0
     } elseif {$n == 4} then {
-        if {[getTag [car $args]] == 1} then {
+        if {[getTag [safeCar $args]] == 1} then {
             return 0
         }
         return $sym_t
     } elseif {$n == 5} then {
-        if {[getTag [car $args]] == 2} then {
+        if {[getTag [safeCar $args]] == 2} then {
             return $sym_t
         }
         return 0
     } elseif {$n == 6} then {
-        if {[getTag [car $args]] == 3} then {
+        if {[getTag [safeCar $args]] == 3} then {
             return $sym_t
         }
         return 0
@@ -591,7 +605,8 @@ proc subrCall {n args} {
 }
 
 proc arithCall {n args} {
-    if {[getTag [car $args]] != 2 || [getTag [car [cdr $args]]] != 2} then {
+    if {[getTag [safeCar $args]] != 2 ||
+        [getTag [safeCar [safeCdr $args]]] != 2} then {
         return [makeError "wrong type"]
     }
     set x [getNum [car $args]]
