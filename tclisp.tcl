@@ -230,6 +230,13 @@ proc makeSym {str} {
     return [setData [setTag 0 3] $i]
 }
 
+set sym_t [makeSym "t"]
+set sym_quote [makeSym "quote"]
+set sym_if [makeSym "if"]
+set sym_lambda [makeSym "lambda"]
+set sym_defun [makeSym "defun"]
+set sym_setq [makeSym "setq"]
+
 proc makeError {str} {
     set ret [makeSym $str]
     return [setTag $ret 6]
@@ -279,6 +286,7 @@ proc readAtom {str} {
 }
 
 proc read {str} {
+    global sym_quote
     set kLPar "("
     set kRPar ")"
     set kQuote "'"
@@ -298,7 +306,7 @@ proc read {str} {
         lispush $elm
         set ret [makeCons $elm 0]
         lispush $ret
-        set ret [makeCons [makeSym "quote"] $ret]
+        set ret [makeCons $sym_quote $ret]
         lispop 2
         return [list $ret [lindex $tmp 1]]
     }
@@ -404,6 +412,11 @@ proc addToEnv {sym val env} {
 
 proc eval1 {obj env} {
     global g_env
+    global sym_quote
+    global sym_if
+    global sym_lambda
+    global sym_defun
+    global sym_setq
     set tag [getTag $obj]
     if {$tag == 0 || $tag == 2 || $tag == 6} then {
         return $obj
@@ -419,9 +432,9 @@ proc eval1 {obj env} {
 
     set op [car $obj]
     set args [cdr $obj]
-    if {$op == [makeSym "quote"]} then {
+    if {$op == $sym_quote} then {
         return [car $args]
-    } elseif {$op == [makeSym "if"]} then {
+    } elseif {$op == $sym_if} then {
         lispush $args
         lispush $env
         set cond [eval1 [car $args] $env]
@@ -430,15 +443,15 @@ proc eval1 {obj env} {
             return [eval1 [car [cdr [cdr $args]]] $env]
         }
         return [eval1 [car [cdr $args]] $env]
-    } elseif {$op == [makeSym "lambda"]} then {
+    } elseif {$op == $sym_lambda} then {
         return [makeExpr $args $env]
-    } elseif {$op == [makeSym "defun"]} then {
+    } elseif {$op == $sym_defun} then {
         lispush $args
         set tmp [makeExpr [cdr $args] $env]
         addToEnv [car $args] $tmp $g_env
         lispop 1
         return [car $args]
-    } elseif {$op == [makeSym "setq"]} then {
+    } elseif {$op == $sym_setq} then {
         lispush $args
         lispush $env
         set val [eval1 [car [cdr $args]] $env]
@@ -510,6 +523,7 @@ proc apply1 {fn args env} {
 }
 
 proc subrCall {n args} {
+    global sym_t
     if {$n == 0} then {
         return [car [car $args]]
     } elseif {$n == 1} then {
@@ -518,22 +532,22 @@ proc subrCall {n args} {
         return [makeCons [car $args] [car [cdr $args]]]
     } elseif {$n == 3} then {
         if {[car $args] == [car [cdr $args]]} {
-            return [makeSym "t"]
+            return $sym_t
         }
         return 0
     } elseif {$n == 4} then {
         if {[getTag [car $args]] == 1} then {
             return 0
         }
-        return [makeSym "t"]
+        return $sym_t
     } elseif {$n == 5} then {
         if {[getTag [car $args]] == 2} then {
-            return [makeSym "t"]
+            return $sym_t
         }
         return 0
     } elseif {$n == 6} then {
         if {[getTag [car $args]] == 3} then {
-            return [makeSym "t"]
+            return $sym_t
         }
         return 0
     } else {
