@@ -236,6 +236,9 @@ set sym_if [makeSym "if"]
 set sym_lambda [makeSym "lambda"]
 set sym_defun [makeSym "defun"]
 set sym_setq [makeSym "setq"]
+set sym_loop [makeSym "loop"]
+set sym_return [makeSym "return"]
+set loop_val 0
 
 proc makeError {str} {
     set ret [makeSym $str]
@@ -417,6 +420,9 @@ proc eval1 {obj env} {
     global sym_lambda
     global sym_defun
     global sym_setq
+    global sym_loop
+    global sym_return
+    global loop_val
     set tag [getTag $obj]
     if {$tag == 0 || $tag == 2 || $tag == 6} then {
         return $obj
@@ -439,7 +445,9 @@ proc eval1 {obj env} {
         lispush $env
         set cond [eval1 [car $args] $env]
         lispop 2
-        if {$cond == 0} then {
+        if {[getTag $cond] == 6} then {
+            return $cond
+        } elseif {$cond == 0} then {
             return [eval1 [car [cdr [cdr $args]]] $env]
         }
         return [eval1 [car [cdr $args]] $env]
@@ -455,6 +463,10 @@ proc eval1 {obj env} {
         lispush $args
         lispush $env
         set val [eval1 [car [cdr $args]] $env]
+        lispop 2
+        if {[getTag $val] == 6} then {
+            return $val
+        }
         set sym [car $args]
         set bind [findVar $sym $env]
         if {$bind == 0} then {
@@ -462,8 +474,12 @@ proc eval1 {obj env} {
         } else {
             setCdr $bind $val
         }
-        lispop 2
         return $val
+    } elseif {$op == $sym_loop} then {
+        return [loop1 $args $env]
+    } elseif {$op == $sym_return} then {
+        set loop_val [eval1 [car $args] $env]
+        return [makeError ""]
     }
     lispush $env
     lispush $args
@@ -497,10 +513,28 @@ proc progn {bdy env} {
     lispush $env
     while {[getTag $bdy] == 1} {
         set ret [eval1 [car $bdy] $env]
+        if {[getTag $ret] == 6} then {
+            break
+        }
         set bdy [cdr $bdy]
     }
     lispop 2
     return $ret
+}
+
+proc loop1 {bdy env} {
+    global sym_table
+    global loop_val
+    while {1} {
+        set ret [progn $bdy $env]
+        if {[getTag $ret] == 6} then {
+            if {$sym_table([getData $ret]) == ""} then {
+                return $loop_val
+            } else {
+                return $ret
+            }
+        }
+    }
 }
 
 proc apply1 {fn args env} {
